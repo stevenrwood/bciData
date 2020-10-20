@@ -1,0 +1,24 @@
+# Ignore file for VS 2019 projects
+.suo
+VC.db
+*.obj
+*.log
+*.recipe
+*.tlog
+*.user
+msbuild.*
+unsuccessfulbuild
+*.lastbuildstate
+*.FileListAbsolute.txt
+z.TMP
+.idea/
+.vs/
+cmake-build-debug/
+out/
+Debug/
+Release/
+obj/
+x64/
+build/
+packages/
+logs/
