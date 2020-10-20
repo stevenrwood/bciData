@@ -34,9 +34,6 @@
     <WarningLevel>4</WarningLevel>
     <OutputPath>$(SolutionDir)\..\x64\$(Configuration)\</OutputPath>
   </PropertyGroup>
-  <PropertyGroup>
-    <StartupObject>bci.app</StartupObject>
-  </PropertyGroup>
   <ItemGroup>
     <Reference Include="Accord, Version=3.8.0.0, Culture=neutral, PublicKeyToken=fa1a88e29555ccf7, processorArchitecture=MSIL">
       <HintPath>packages\Accord.3.8.0\lib\net462\Accord.dll</HintPath>
