@@ -7,26 +7,26 @@ namespace bciData
 {
     public class BciWiFi
     {
-        public static bool ConnectToOpenBCIWifi()
+        public static bool ConnectToOpenBCIWifi(out string ssid)
         {
+            ssid = string.Empty;
             var reSSId = new Regex(@"^SSID\s+\d+\s+\:\s+(?<SSID>OPENBci-.+?)$", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Multiline);
             var output = RunNetSh("wlan show networks");
-            var openBCISSIDName = string.Empty;
             var m = reSSId.Match(output);
             while (m.Success)
             {
-                var ssid = m.Groups["SSID"].Value;
+                ssid = m.Groups["SSID"].Value;
                 if (ssid.StartsWith("OpenBCI-", StringComparison.OrdinalIgnoreCase))
                 {
-                    openBCISSIDName = ssid.Trim();
+                    ssid = ssid.Trim();
                     break;
                 }
                 m = m.NextMatch();
             }
-            if (string.IsNullOrEmpty(openBCISSIDName))
-                throw new ApplicationException("Wifi specified and no active OpenBCI-XXXX network visible to connect to.\nMake sure Cyton WiFi board turned on and booted.");
+            if (string.IsNullOrEmpty(ssid))
+                return false;
 
-            output = RunNetSh($"wlan connect {openBCISSIDName} {openBCISSIDName} Wi-Fi").Trim();
+            output = RunNetSh($"wlan connect {ssid} {ssid} Wi-Fi").Trim();
             return output.StartsWith("Connection request was completed successfully.", StringComparison.OrdinalIgnoreCase);
         }
 

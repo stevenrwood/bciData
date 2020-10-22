@@ -62,7 +62,6 @@
   <ItemGroup>
     <Compile Include="bciData.cs" />
     <Compile Include="bciOptions.cs" />
-    <Compile Include="IBciData.cs" />
     <Compile Include="NativeMethods.cs" />
     <Compile Include="bciWiFi.cs" />
   </ItemGroup>
@@ -80,6 +79,5 @@
     <Error Condition="!Exists('packages\Accord.3.8.0\build\Accord.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\Accord.3.8.0\build\Accord.targets'))" />
     <Error Condition="!Exists('packages\brainflow.3.5.0\build\brainflow.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\brainflow.3.5.0\build\brainflow.targets'))" />
   </Target>
-</Project>
   <Import Project="packages\brainflow.3.5.0\build\brainflow.targets" Condition="Exists('packages\brainflow.3.5.0\build\brainflow.targets')" />
 </Project>

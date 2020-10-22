@@ -1,17 +1,12 @@
-﻿using brainflow;
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.IO;
-using System.Security.Claims;
 using System.Text;
 using System.Threading;
-using Accord;
-using System.Net.Sockets;
-using System.Net;
+using brainflow;
 
 namespace bciData
 {
-    public class OpenBCI : IBCIDATA
+    public class OpenBCI
     {
         private readonly BciOptions _options;
         private readonly BoardIds _boardId;
@@ -47,14 +42,15 @@ namespace bciData
             _accelRows = BoardShim.get_accel_channels(Convert.ToInt32(_boardId));
             _checkForRailedCount = options.CheckForRailedCount;
             var logFileName = $"{DateTime.UtcNow:yyyy_MM_dd_HH_mm_ss_fff}.csv";
-            _logFilePath = Path.Combine(_options.LogFolderPath, logFileName);
+            _logFilePath = Path.Combine(_options.LogsFolderPath, logFileName);
             _brainflowLogFilePath = _logFilePath.Replace(".csv", "_raw.csv");
 
             var input_params = new BrainFlowInputParams();
             if (_options.WiFi)
             {
-                BciWiFi.ConnectToOpenBCIWifi();
-                input_params.ip_address = _options.IpAddress;
+                if (!BciWiFi.ConnectToOpenBCIWifi(out var ssid))
+                    throw new ApplicationException($"Unable to connected to OpenBCI headset Wifi: {ssid}");
+                input_params.ip_address = string.IsNullOrEmpty(_options.IpAddress) ? "192.168.4.1" : _options.IpAddress;
                 input_params.ip_port = _options.IpPort;
                 input_params.timeout = _options.Timeout;
             }
@@ -129,9 +125,11 @@ namespace bciData
                     var auxData = new double[_accelRows.Length];
                     for (var auxIndex = 0; auxIndex < _accelRows.Length; auxIndex++)
                         auxData[auxIndex] = data[_accelRows[auxIndex], sampleIndex] * (.002 / 16);
-
+                    int[] eventData;
+                    if (_options.EventQueue == null || !_options.EventQueue.TryDequeue(out eventData))
+                        eventData = null;
                     var bciSample = new BciSample(_brainflowSampleCount, channelData, auxData, 
-                        (ulong) data[_timeStampRow, sampleIndex], railedElectrodes);
+                        (ulong) data[_timeStampRow, sampleIndex], railedElectrodes, eventData);
                     if (!_options.ProcessBciSample(bciSample))
                         continue;
 
@@ -152,7 +150,6 @@ namespace bciData
                     _logFile.Flush();
                 }
             }
-
         }
 
         public bool StopStream()
@@ -172,5 +169,25 @@ namespace bciData
 
             return true;
         }
+    }
+
+    public class BciSample
+    {
+        public BciSample(int packetId, double[] channelData, double[] auxData, ulong timeStamp, int railedElectrodes, int[] eventData)
+        {
+            Id = packetId;
+            ChannelData = channelData;
+            AuxData = auxData;
+            TimeStamp = timeStamp;
+            RailedElectrodes = railedElectrodes;
+            EventData = eventData;
+        }
+
+        public int Id { get; }
+        public double[] ChannelData { get; }
+        public double[] AuxData { get; }
+        public ulong TimeStamp { get; }
+        public int[] EventData { get; set; }
+        public int RailedElectrodes { get; }
     }
 }
