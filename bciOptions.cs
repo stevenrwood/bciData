@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
@@ -20,6 +21,7 @@ namespace bciData
         public int IpPort;
         public string Port;
         public string LogsFolderPath;
+        public List<string> Tags;
         public ConcurrentQueue<int[]> EventQueue;
         public ProcessBciSampleDelegate ProcessBciSample;
         public BciOptions()
@@ -29,6 +31,7 @@ namespace bciData
             IpPort = 0;
             Port = string.Empty;
             LogsFolderPath = string.Empty;
+            Tags = new List<string>();
             Daisy = false;
             WiFi = false;
             Timeout = 0;

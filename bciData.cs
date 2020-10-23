@@ -22,8 +22,6 @@ namespace bciData
         private int _brainflowSampleCount;
         private const double ValidNegativeThreshold = -180000.0;
         private const double ValidPositiveThreshold =  180000.0;
-        private readonly string _brainflowLogFilePath;
-        private readonly string _logFilePath;
         private readonly StreamWriter _logFile;
 
         public OpenBCI(BciOptions options, string[] customEventNames)
@@ -41,9 +39,9 @@ namespace bciData
             _eegNames = BoardShim.get_eeg_names(Convert.ToInt32(baseBoardId));
             _accelRows = BoardShim.get_accel_channels(Convert.ToInt32(_boardId));
             _checkForRailedCount = options.CheckForRailedCount;
-            var logFileName = $"{DateTime.UtcNow:yyyy_MM_dd_HH_mm_ss_fff}.csv";
-            _logFilePath = Path.Combine(_options.LogsFolderPath, logFileName);
-            _brainflowLogFilePath = _logFilePath.Replace(".csv", "_raw.csv");
+            var logFileName = $"{DateTime.UtcNow:yyyy_MM_dd_HH_mm_ss_fff}_{string.Join("_", _options.Tags)}.csv";
+            LogFilePath = Path.Combine(_options.LogsFolderPath, logFileName);
+            DebugLogFilePath = LogFilePath.Replace(".csv", "_raw.csv");
 
             var input_params = new BrainFlowInputParams();
             if (_options.WiFi)
@@ -64,13 +62,17 @@ namespace bciData
                 throw new ApplicationException("prepare_session succeeded but is_prepared still false");
             BoardShim.disable_board_logger();
 
-            _logFile = new StreamWriter(_logFilePath);
+            _logFile = new StreamWriter(LogFilePath);
             _logFile.WriteLine($"Timestamp,{string.Join(",", _eegNames)},AX,AY,AZ,{string.Join(",", _customEventNames)}");
             _logFile.Flush();
         }
 
         public int Verbosity => _options.Verbosity;
         public bool AreCollecting { get; set; }
+
+        public string LogFilePath { get; }
+
+        public string DebugLogFilePath { get; }
 
         public bool StartStream()
         {
@@ -82,7 +84,7 @@ namespace bciData
 
         private void CollectionThread()
         {
-            _boardShim.start_stream(45000, $"file://{_brainflowLogFilePath}:w");
+            _boardShim.start_stream(45000, $"file://{DebugLogFilePath}:w");
             var _railedCountdown = -1;
             while (AreCollecting)
             {
