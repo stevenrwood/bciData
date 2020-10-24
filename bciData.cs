@@ -41,7 +41,9 @@ namespace bciData
             _checkForRailedCount = options.CheckForRailedCount;
             var logFileName = $"{DateTime.UtcNow:yyyy_MM_dd_HH_mm_ss_fff}_{string.Join("_", _options.Tags)}.csv";
             LogFilePath = Path.Combine(_options.LogsFolderPath, logFileName);
+            _options.DebugLog(false,$"BCI LogFilePath: {LogFilePath}");
             DebugLogFilePath = LogFilePath.Replace(".csv", "_raw.csv");
+            BrainflowLogFilePath = LogFilePath.Replace(".csv", "_brainflow.txt");
 
             var input_params = new BrainFlowInputParams();
             if (_options.WiFi)
@@ -49,12 +51,13 @@ namespace bciData
                 if (!BciWiFi.ConnectToOpenBCIWifi(out var ssid))
                     throw new ApplicationException($"Unable to connected to OpenBCI headset Wifi: {ssid}");
                 input_params.ip_address = string.IsNullOrEmpty(_options.IpAddress) ? "192.168.4.1" : _options.IpAddress;
-                input_params.ip_port = _options.IpPort;
+                input_params.ip_port = _options.IpPort == 0 ? 6677 : _options.IpPort;
                 input_params.timeout = _options.Timeout;
             }
             else
                 input_params.serial_port = _options.Port;
 
+            BoardShim.set_log_file(BrainflowLogFilePath);
             BoardShim.enable_dev_board_logger();
             _boardShim = new BoardShim(Convert.ToInt32(_boardId), input_params);
             _boardShim.prepare_session();
@@ -73,11 +76,13 @@ namespace bciData
         public string LogFilePath { get; }
 
         public string DebugLogFilePath { get; }
-
+        public string BrainflowLogFilePath { get; }
+        
         public bool StartStream()
         {
             AreCollecting = true;
             _dataThread = new Thread(CollectionThread);
+            _dataThread.Priority = ThreadPriority.BelowNormal;
             _dataThread.Start();
             return true;
         }

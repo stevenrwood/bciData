@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.Eventing.Reader;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
@@ -12,6 +13,8 @@ namespace bciData
 
     public class BciOptions
     {
+        public delegate void Logger(string message);
+        
         public int Verbosity;
         public bool Daisy;
         public bool WiFi;
@@ -24,6 +27,7 @@ namespace bciData
         public List<string> Tags;
         public ConcurrentQueue<int[]> EventQueue;
         public ProcessBciSampleDelegate ProcessBciSample;
+        public event EventHandler<BciLoggerEventArgs> LogMessage;
         public BciOptions()
         {
             Verbosity = 0;
@@ -39,5 +43,27 @@ namespace bciData
             EventQueue = null;
             ProcessBciSample = null;
         }
+
+        public void DebugLog(bool error, string message)
+        {
+            OnLogMessage(new BciLoggerEventArgs(error, message));
+        }
+
+        protected virtual void OnLogMessage(BciLoggerEventArgs e)
+        {
+            LogMessage?.Invoke(this, e);
+        }
+    }
+
+    public class BciLoggerEventArgs : EventArgs
+    {
+        public BciLoggerEventArgs(bool error, string message)
+        {
+            Error = error;
+            Message = message;
+        }
+
+        public bool Error { get; set; }
+        public string Message { get; set; }
     }
 }
