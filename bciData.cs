@@ -39,16 +39,20 @@ namespace bciData
             _accelRows = BoardShim.get_accel_channels(Convert.ToInt32(_boardId));
             _checkForRailedCount = options.CheckForRailedCount;
             var logFileName = $"{DateTime.UtcNow:yyyy_MM_dd_HH_mm_ss_fff}_{string.Join("_", _options.Tags)}.csv";
-            LogFilePath = Path.Combine(_options.LogsFolderPath, logFileName);
+            LogFilePath = logFileName;
             RawLogFilePath = LogFilePath.Replace(".csv", "_raw.csv");
             DebugLogFilePath = LogFilePath.Replace(".csv", ".txt");
             BrainflowLogFilePath = LogFilePath.Replace(".csv", "_brainflow.txt");
-
+            _options.DebugLog(false, $"Setting brainflow raw capture csv {RawLogFilePath}");
+            _options.DebugLog(false, $"Setting bcigame normalized capture csv file path to: {LogFilePath}");
+            _options.DebugLog(false, $"Setting brainflow log file path to: {BrainflowLogFilePath}");
             BoardShim.set_log_file(BrainflowLogFilePath);
+            _options.DebugLog(false, $"Enabling brainflow logger");
             BoardShim.enable_dev_board_logger();
             _options.DebugLog(false, $"BCI LogFilePath: {LogFilePath}");
             LogModuleInfo("brainflow");
             LogModuleInfo("boardcontroller");
+            File.WriteAllText(RawLogFilePath, $"Timestamp,{string.Join(",", _eegNames)},Other1,Other2,Other3,Other4,Other5,Other6,AX,AY,AZ,{string.Join(",", _customEventNames)}");
             var input_params = new BrainFlowInputParams();
             if (_options.WiFi)
             {
@@ -74,7 +78,7 @@ namespace bciData
 
                 IsConnected = true;
                 _logFile = new StreamWriter(LogFilePath);
-                _logFile.WriteLine($"Timestamp,{string.Join(",", _eegNames)},Other1,Other2,Other3,Other4,Other5,Other6,AX,AY,AZ,{string.Join(",", _customEventNames)}");
+                _logFile.WriteLine($"Timestamp,{string.Join(",", _eegNames)},AX,AY,AZ,{string.Join(",", _customEventNames)}");
                 _logFile.Flush(); 
             }                                                                           
             catch (Exception e)
