@@ -1,11 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics.Eventing.Reader;
-using System.Globalization;
-using System.IO;
-using System.Reflection;
-using System.Text.RegularExpressions;
+using brainflow;
 
 namespace bciData
 {
@@ -16,12 +12,14 @@ namespace bciData
         public delegate void Logger(string message);
         
         public int Verbosity;
+        public LogLevels LogLevel;
         public bool Daisy;
         public bool WiFi;
         public int CheckForRailedCount;
         public int Timeout;
         public string IpAddress;
         public int IpPort;
+        public IpProtocolType IpProtocol;
         public string Port;
         public string LogsFolderPath;
         public List<string> Tags;
@@ -31,8 +29,10 @@ namespace bciData
         public BciOptions()
         {
             Verbosity = 0;
+            LogLevel = LogLevels.LEVEL_ERROR;
             IpAddress = string.Empty;
             IpPort = 0;
+            IpProtocol = IpProtocolType.TCP;
             Port = string.Empty;
             LogsFolderPath = string.Empty;
             Tags = new List<string>();

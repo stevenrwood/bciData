@@ -1,6 +1,7 @@
 ﻿using Microsoft.Win32.SafeHandles;
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace bciData
 {
@@ -28,7 +29,6 @@ namespace bciData
     public class NativeMethods
     {
         #region Signatures
-
         [DllImport("user32.dll", SetLastError = true)]
         public static extern short GetAsyncKeyState(int vKey);
 
@@ -196,6 +196,12 @@ namespace bciData
 
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint mode);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
+        public static extern IntPtr GetModuleHandle(string name);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError=true)]
+        public static extern uint GetModuleFileName(IntPtr hModule, [Out] StringBuilder lpFilename, [MarshalAs(UnmanagedType.U4)] uint nSize);
 
         #endregion
 

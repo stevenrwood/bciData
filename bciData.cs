@@ -19,7 +19,6 @@ namespace bciData
         private readonly string[] _eegNames;
         private readonly string[] _customEventNames;
         private readonly int[] _accelRows;
-        private int _brainflowSampleCount;
         private const double ValidNegativeThreshold = -180000.0;
         private const double ValidPositiveThreshold =  180000.0;
         private readonly StreamWriter _logFile;
@@ -41,10 +40,15 @@ namespace bciData
             _checkForRailedCount = options.CheckForRailedCount;
             var logFileName = $"{DateTime.UtcNow:yyyy_MM_dd_HH_mm_ss_fff}_{string.Join("_", _options.Tags)}.csv";
             LogFilePath = Path.Combine(_options.LogsFolderPath, logFileName);
-            _options.DebugLog(false,$"BCI LogFilePath: {LogFilePath}");
-            DebugLogFilePath = LogFilePath.Replace(".csv", "_raw.csv");
+            RawLogFilePath = LogFilePath.Replace(".csv", "_raw.csv");
+            DebugLogFilePath = LogFilePath.Replace(".csv", ".txt");
             BrainflowLogFilePath = LogFilePath.Replace(".csv", "_brainflow.txt");
 
+            BoardShim.set_log_file(BrainflowLogFilePath);
+            BoardShim.enable_dev_board_logger();
+            _options.DebugLog(false, $"BCI LogFilePath: {LogFilePath}");
+            LogModuleInfo("brainflow");
+            LogModuleInfo("boardcontroller");
             var input_params = new BrainFlowInputParams();
             if (_options.WiFi)
             {
@@ -52,35 +56,55 @@ namespace bciData
                     throw new ApplicationException($"Unable to connected to OpenBCI headset Wifi: {ssid}");
                 input_params.ip_address = string.IsNullOrEmpty(_options.IpAddress) ? "192.168.4.1" : _options.IpAddress;
                 input_params.ip_port = _options.IpPort == 0 ? 6677 : _options.IpPort;
+                input_params.ip_protocol = Convert.ToInt32(_options.IpProtocol);
                 input_params.timeout = _options.Timeout;
             }
             else
+            {
                 input_params.serial_port = _options.Port;
+            }
+            BoardShim.log_message(Convert.ToInt32(LogLevels.LEVEL_INFO), input_params.to_json());
 
-            BoardShim.set_log_file(BrainflowLogFilePath);
-            BoardShim.enable_dev_board_logger();
             _boardShim = new BoardShim(Convert.ToInt32(_boardId), input_params);
-            _boardShim.prepare_session();
-            if (!_boardShim.is_prepared())
-                throw new ApplicationException("prepare_session succeeded but is_prepared still false");
-            BoardShim.disable_board_logger();
+            try
+            { 
+                _boardShim.prepare_session();
+                if (!_boardShim.is_prepared())
+                    throw new ApplicationException("prepare_session succeeded but is_prepared still false");
 
-            _logFile = new StreamWriter(LogFilePath);
-            _logFile.WriteLine($"Timestamp,{string.Join(",", _eegNames)},AX,AY,AZ,{string.Join(",", _customEventNames)}");
-            _logFile.Flush();
+                IsConnected = true;
+                _logFile = new StreamWriter(LogFilePath);
+                _logFile.WriteLine($"Timestamp,{string.Join(",", _eegNames)},Other1,Other2,Other3,Other4,Other5,Other6,AX,AY,AZ,{string.Join(",", _customEventNames)}");
+                _logFile.Flush(); 
+            }                                                                           
+            catch (Exception e)
+            {
+                IsConnected = false;
+                _options.DebugLog(true, $"Failed to connected to OpenBCI headset: {e.Message}");
+            }
         }
 
         public int Verbosity => _options.Verbosity;
+        public bool IsConnected { get; set; }
         public bool AreCollecting { get; set; }
-
+        public int SamplesCollected { get; set; }
         public string LogFilePath { get; }
-
+        public string RawLogFilePath { get; } 
         public string DebugLogFilePath { get; }
         public string BrainflowLogFilePath { get; }
+
+        private void LogModuleInfo(string name)
+        {
+            var hModule = NativeMethods.GetModuleHandle(name);
+            var sb = new StringBuilder(256);
+            if (NativeMethods.GetModuleFileName(hModule, sb, (uint)sb.Capacity) != 0)
+                BoardShim.log_message(Convert.ToInt32(LogLevels.LEVEL_INFO), $"IsLoaded: {sb} {File.GetLastWriteTime(sb.ToString()):O}");
+        }
         
         public bool StartStream()
         {
-            AreCollecting = true;
+            AreCollecting = IsConnected;
+            SamplesCollected = 0;
             _dataThread = new Thread(CollectionThread);
             _dataThread.Priority = ThreadPriority.BelowNormal;
             _dataThread.Start();
@@ -89,7 +113,9 @@ namespace bciData
 
         private void CollectionThread()
         {
-            _boardShim.start_stream(45000, $"file://{DebugLogFilePath}:w");
+            if (!IsConnected) return;
+
+            _boardShim.start_stream(45000, $"file://{RawLogFilePath}:a");
             var _railedCountdown = -1;
             while (AreCollecting)
             {
@@ -97,7 +123,10 @@ namespace bciData
                 int railedElectrodes = 0;
                 for (var sampleIndex = 0; sampleIndex < data.GetLength(1); sampleIndex++)
                 {
-                    _brainflowSampleCount += 1;
+                    SamplesCollected += 1;
+                    if (SamplesCollected % 1000 == 0)
+                        _options.DebugLog(false, $"{data[_timeStampRow, sampleIndex]}: {SamplesCollected}");
+
                     //
                     // Because the channels_data and aux_data is the raw data in counts read by the board,
                     // we need to multiply the data by a scale factor. There is a specific scale factor for each board:
@@ -135,7 +164,7 @@ namespace bciData
                     int[] eventData;
                     if (_options.EventQueue == null || !_options.EventQueue.TryDequeue(out eventData))
                         eventData = null;
-                    var bciSample = new BciSample(_brainflowSampleCount, channelData, auxData, 
+                    var bciSample = new BciSample(SamplesCollected, channelData, auxData, 
                         (ulong) data[_timeStampRow, sampleIndex], railedElectrodes, eventData);
                     if (!_options.ProcessBciSample(bciSample))
                         continue;
@@ -166,6 +195,7 @@ namespace bciData
                 AreCollecting = false;
                 _boardShim.stop_stream();
                 _boardShim.release_session();
+                BoardShim.disable_board_logger();
                 _logFile.Close();
             }
             catch (BrainFlowException e)
