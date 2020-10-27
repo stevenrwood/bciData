@@ -39,10 +39,10 @@ namespace bciData
             _accelRows = BoardShim.get_accel_channels(Convert.ToInt32(_boardId));
             _checkForRailedCount = options.CheckForRailedCount;
             var logFileName = $"{DateTime.UtcNow:yyyy_MM_dd_HH_mm_ss_fff}_{string.Join("_", _options.Tags)}.csv";
-            LogFilePath = logFileName;
+            LogFilePath = Path.Combine(_options.LogsFolderPath, logFileName);
             RawLogFilePath = LogFilePath.Replace(".csv", "_raw.csv");
-            DebugLogFilePath = LogFilePath.Replace(".csv", ".txt");
-            BrainflowLogFilePath = LogFilePath.Replace(".csv", "_brainflow.txt");
+            DebugLogFilePath = LogFilePath.Replace(".csv", "_debug.log");
+            BrainflowLogFilePath = LogFilePath.Replace(".csv", "_brainflow.log");
             _options.DebugLog(false, $"Setting brainflow raw capture csv {RawLogFilePath}");
             _options.DebugLog(false, $"Setting bcigame normalized capture csv file path to: {LogFilePath}");
             _options.DebugLog(false, $"Setting brainflow log file path to: {BrainflowLogFilePath}");
@@ -52,7 +52,7 @@ namespace bciData
             _options.DebugLog(false, $"BCI LogFilePath: {LogFilePath}");
             LogModuleInfo("brainflow");
             LogModuleInfo("boardcontroller");
-            File.WriteAllText(RawLogFilePath, $"Timestamp,{string.Join(",", _eegNames)},Other1,Other2,Other3,Other4,Other5,Other6,AX,AY,AZ,{string.Join(",", _customEventNames)}");
+            File.WriteAllText(RawLogFilePath, $"Packet,{string.Join(",", _eegNames)},Other1,Other2,Other3,Other4,Other5,Other6,AX,AY,AZ,Timestamp");
             var input_params = new BrainFlowInputParams();
             if (_options.WiFi)
             {
@@ -123,8 +123,8 @@ namespace bciData
             var _railedCountdown = -1;
             while (AreCollecting)
             {
-                double[,] data = _boardShim.get_board_data();
-                int railedElectrodes = 0;
+                var data = _boardShim.get_board_data();
+                var railedElectrodes = 0;
                 for (var sampleIndex = 0; sampleIndex < data.GetLength(1); sampleIndex++)
                 {
                     SamplesCollected += 1;
@@ -165,26 +165,25 @@ namespace bciData
                     var auxData = new double[_accelRows.Length];
                     for (var auxIndex = 0; auxIndex < _accelRows.Length; auxIndex++)
                         auxData[auxIndex] = data[_accelRows[auxIndex], sampleIndex] * (.002 / 16);
-                    int[] eventData;
-                    if (_options.EventQueue == null || !_options.EventQueue.TryDequeue(out eventData))
+                    if (_options.EventQueue == null || !_options.EventQueue.TryDequeue(out var eventData))
                         eventData = null;
                     var bciSample = new BciSample(SamplesCollected, channelData, auxData, 
-                        (ulong) data[_timeStampRow, sampleIndex], railedElectrodes, eventData);
+                        data[_timeStampRow, sampleIndex], railedElectrodes, eventData);
                     if (!_options.ProcessBciSample(bciSample))
                         continue;
 
                     // Experiment wants to save this sample, so append to output .csv file
                     var sb = new StringBuilder();
-                    sb.Append($"{bciSample.TimeStamp}");
+                    sb.Append($"{bciSample.TimeStamp:0.0#####}");
                     for (var eegIndex = 0; eegIndex < _eegRows.Length; eegIndex++)
-                        sb.AppendFormat(",{0,12:F4}", channelData[eegIndex]);
+                        sb.Append($",{channelData[eegIndex]:0.0#####}");
 
                     foreach (var d in bciSample.AuxData)
-                        sb.AppendFormat(",{0,12:F4}", d);
+                        sb.Append($",{d:0.0#####}");
 
                     if (bciSample.EventData != null)
                         foreach (var d in bciSample.EventData)
-                            sb.AppendFormat(",{0,12:D}", (ulong) d);
+                            sb.Append($",{d:00}");
 
                     _logFile.WriteLine($"{sb}");
                     _logFile.Flush();
@@ -214,7 +213,7 @@ namespace bciData
 
     public class BciSample
     {
-        public BciSample(int packetId, double[] channelData, double[] auxData, ulong timeStamp, int railedElectrodes, int[] eventData)
+        public BciSample(int packetId, double[] channelData, double[] auxData, double timeStamp, int railedElectrodes, int[] eventData)
         {
             Id = packetId;
             ChannelData = channelData;
@@ -227,7 +226,7 @@ namespace bciData
         public int Id { get; }
         public double[] ChannelData { get; }
         public double[] AuxData { get; }
-        public ulong TimeStamp { get; }
+        public double TimeStamp { get; }
         public int[] EventData { get; set; }
         public int RailedElectrodes { get; }
     }
