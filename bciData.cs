@@ -57,7 +57,7 @@ namespace bciData
             if (_options.WiFi)
             {
                 if (!BciWiFi.ConnectToOpenBCIWifi(out var ssid))
-                    throw new ApplicationException($"Unable to connected to OpenBCI headset Wifi: {ssid}");
+                    _options.DebugLog(true, $"Unable to connected to OpenBCI headset Wifi: {ssid}");
                 input_params.ip_address = string.IsNullOrEmpty(_options.IpAddress) ? "192.168.4.1" : _options.IpAddress;
                 input_params.ip_port = _options.IpPort == 0 ? 6677 : _options.IpPort;
                 input_params.ip_protocol = Convert.ToInt32(_options.IpProtocol);
@@ -68,10 +68,9 @@ namespace bciData
                 input_params.serial_port = _options.Port;
             }
             BoardShim.log_message(Convert.ToInt32(LogLevels.LEVEL_INFO), input_params.to_json());
-
-            _boardShim = new BoardShim(Convert.ToInt32(_boardId), input_params);
             try
             { 
+                _boardShim = new BoardShim(Convert.ToInt32(_boardId), input_params);
                 _boardShim.prepare_session();
                 if (!_boardShim.is_prepared())
                     throw new ApplicationException("prepare_session succeeded but is_prepared still false");
