@@ -28,9 +28,11 @@ namespace bciData
             _options = options;
             _customEventNames = customEventNames;
             var baseBoardId = _options.Daisy ? BoardIds.CYTON_DAISY_BOARD : BoardIds.CYTON_BOARD;
-            _boardId = _options.Daisy
-                ? (_options.WiFi ? BoardIds.CYTON_DAISY_WIFI_BOARD : BoardIds.CYTON_DAISY_BOARD)
-                : (_options.WiFi ? BoardIds.CYTON_WIFI_BOARD : BoardIds.CYTON_BOARD);
+            _boardId = _options.Synthetic
+                ? BoardIds.SYNTHETIC_BOARD
+                : _options.Daisy
+                    ? (_options.WiFi ? BoardIds.CYTON_DAISY_WIFI_BOARD : BoardIds.CYTON_DAISY_BOARD)
+                    : (_options.WiFi ? BoardIds.CYTON_WIFI_BOARD : BoardIds.CYTON_BOARD);
             AreCollecting = false;
             _packetIdRow = BoardShim.get_package_num_channel(Convert.ToInt32(_boardId));
             _timeStampRow = BoardShim.get_timestamp_channel(Convert.ToInt32(_boardId));
@@ -38,7 +40,7 @@ namespace bciData
             _eegNames = BoardShim.get_eeg_names(Convert.ToInt32(baseBoardId));
             _accelRows = BoardShim.get_accel_channels(Convert.ToInt32(_boardId));
             _checkForRailedCount = options.CheckForRailedCount;
-            var logFileName = $"{DateTime.UtcNow:yyyy_MM_dd_HH_mm_ss_fff}_{string.Join("_", _options.Tags)}.csv";
+            var logFileName = $"{DateTime.UtcNow:yyyy_MM_dd_HH_mm_ss_fff}{string.Join("_", _options.Tags)}{(_options.Synthetic ? "_synthetic" : "")}.csv";
             LogFilePath = Path.Combine(_options.LogsFolderPath, logFileName);
             RawLogFilePath = LogFilePath.Replace(".csv", "_raw.csv");
             DebugLogFilePath = LogFilePath.Replace(".csv", "_debug.log");
@@ -46,27 +48,32 @@ namespace bciData
             _options.DebugLog(false, $"Setting brainflow raw capture csv {RawLogFilePath}");
             _options.DebugLog(false, $"Setting bcigame normalized capture csv file path to: {LogFilePath}");
             _options.DebugLog(false, $"Setting brainflow log file path to: {BrainflowLogFilePath}");
-            BoardShim.set_log_file(BrainflowLogFilePath);
             _options.DebugLog(false, $"Enabling brainflow logger");
             BoardShim.enable_dev_board_logger();
-            _options.DebugLog(false, $"BCI LogFilePath: {LogFilePath}");
+            BoardShim.set_log_file(BrainflowLogFilePath);
             LogModuleInfo("brainflow");
             LogModuleInfo("boardcontroller");
             File.WriteAllText(RawLogFilePath, $"Packet,{string.Join(",", _eegNames)},Other1,Other2,Other3,Other4,Other5,Other6,AX,AY,AZ,Timestamp");
             var input_params = new BrainFlowInputParams();
-            if (_options.WiFi)
+            if (!options.Synthetic)
             {
-                if (!BciWiFi.ConnectToOpenBCIWifi(out var ssid))
-                    _options.DebugLog(true, $"Unable to connected to OpenBCI headset Wifi: {ssid}");
-                input_params.ip_address = string.IsNullOrEmpty(_options.IpAddress) ? "192.168.4.1" : _options.IpAddress;
-                input_params.ip_port = _options.IpPort == 0 ? 6677 : _options.IpPort;
-                input_params.ip_protocol = Convert.ToInt32(_options.IpProtocol);
-                input_params.timeout = _options.Timeout;
+                if (_options.WiFi)
+                {
+                    if (!BciWiFi.ConnectToOpenBCIWifi(out var ssid))
+                        _options.DebugLog(true, $"Unable to connected to OpenBCI headset Wifi: {ssid}");
+                    input_params.ip_address =
+                        string.IsNullOrEmpty(_options.IpAddress) ? "192.168.4.1" : _options.IpAddress;
+                    input_params.ip_port = _options.IpPort == 0 ? 6677 : _options.IpPort;
+                    input_params.ip_protocol = Convert.ToInt32(_options.IpProtocol);
+                    input_params.timeout = _options.Timeout;
+                }
+                else
+                {
+                    input_params.serial_port = _options.Port;
+                }
             }
-            else
-            {
-                input_params.serial_port = _options.Port;
-            }
+
+            BoardShim.log_message(Convert.ToInt32(LogLevels.LEVEL_INFO), $"board_id: {_boardId} ({Convert.ToInt32(_boardId)})");
             BoardShim.log_message(Convert.ToInt32(LogLevels.LEVEL_INFO), input_params.to_json());
             try
             { 
@@ -202,7 +209,7 @@ namespace bciData
             }
             catch (BrainFlowException e)
             {
-                Console.WriteLine($"{e.Message}\n{e.StackTrace}");
+                _options.DebugLog(true, $"{e.Message}\n{e.StackTrace}");
                 return false;
             }
 
