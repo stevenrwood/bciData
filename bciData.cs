@@ -53,7 +53,7 @@ namespace bciData
             BoardShim.set_log_file(BrainflowLogFilePath);
             LogModuleInfo("brainflow");
             LogModuleInfo("boardcontroller");
-            File.WriteAllText(RawLogFilePath, $"Packet,{string.Join(",", _eegNames)},Other1,Other2,Other3,Other4,Other5,Other6,AX,AY,AZ,Timestamp");
+            File.WriteAllText(RawLogFilePath, $"Packet,{string.Join(",", _eegNames)},Other1,Other2,Other3,Other4,Other5,Other6,AX,AY,AZ,Other7,Other8,Other9,Timestamp\n");
             var input_params = new BrainFlowInputParams();
             if (!options.Synthetic)
             {
@@ -113,10 +113,18 @@ namespace bciData
         
         public bool StartStream()
         {
+            if (!IsConnected)
+            {
+                _options.DebugLog(true, $"Attempt to start data stream failed as not connected.");
+                return false;
+            }
+            
             AreCollecting = IsConnected;
             SamplesCollected = 0;
+
             _dataThread = new Thread(CollectionThread);
             _dataThread.Priority = ThreadPriority.BelowNormal;
+            _options.DebugLog(false, $"Starting data collection thread.");
             _dataThread.Start();
             return true;
         }
@@ -125,6 +133,7 @@ namespace bciData
         {
             if (!IsConnected) return;
 
+            _options.DebugLog(false, $"Entering data collection thread.  Starting data stream.");
             _boardShim.start_stream(45000, $"file://{RawLogFilePath}:a");
             var _railedCountdown = -1;
             while (AreCollecting)
@@ -135,7 +144,7 @@ namespace bciData
                 {
                     SamplesCollected += 1;
                     if (SamplesCollected % 1000 == 0)
-                        _options.DebugLog(false, $"{data[_timeStampRow, sampleIndex]}: {SamplesCollected}");
+                        _options.DebugLog(false, $"CollectionThread heartbeat: {data[_timeStampRow, sampleIndex]}: {SamplesCollected}");
 
                     //
                     // Because the channels_data and aux_data is the raw data in counts read by the board,
@@ -154,6 +163,8 @@ namespace bciData
                         if (channelData[eegIndex] < ValidNegativeThreshold ||
                             channelData[eegIndex] > ValidPositiveThreshold)
                             railedElectrodes |= 1 << eegIndex;
+                        if (SamplesCollected < 6)
+                            _options.DebugLog(false, $"Sample: {SamplesCollected}  Electrode: {eegIndex}  Raw: {data[_eegRows[eegIndex], sampleIndex]}  Scaled: {channelData[eegIndex]}  Railed: {railedElectrodes & 1 << eegIndex:X}");
                     }
 
                     if (railedElectrodes != 0)
@@ -201,9 +212,26 @@ namespace bciData
         {
             try
             {
+                _options.DebugLog(false, $"Stopping data stream.");
                 AreCollecting = false;
                 _boardShim.stop_stream();
-                _boardShim.release_session();
+            }
+            catch (BrainFlowException e)
+            {
+                _options.DebugLog(true, $"{e.Message}\n{e.StackTrace}");
+                return false;
+            }
+
+            return true;
+        }
+
+        public bool Close()
+        {
+            try
+            {
+                _options.DebugLog(false, $"Releasing BCI connection and closing logfile.  IsPrepared: {_boardShim.is_prepared()}");
+                if (_boardShim.is_prepared())
+                    _boardShim.release_session();
                 BoardShim.disable_board_logger();
                 _logFile.Close();
             }
@@ -215,16 +243,22 @@ namespace bciData
 
             return true;
         }
+
     }
 
     public class BciSample
     {
+        private static double _baseTimestamp = 0.0;
         public BciSample(int packetId, double[] channelData, double[] auxData, double timeStamp, int railedElectrodes, int[] eventData)
         {
             Id = packetId;
             ChannelData = channelData;
             AuxData = auxData;
             TimeStamp = timeStamp;
+            if (_baseTimestamp == 0)
+                _baseTimestamp = timeStamp;
+            else
+                TimeStamp -= _baseTimestamp;
             RailedElectrodes = railedElectrodes;
             EventData = eventData;
         }
