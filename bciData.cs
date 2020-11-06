@@ -190,8 +190,6 @@ namespace bciData
                     for (var eegIndex = 0; eegIndex < _eegRows.Length; eegIndex++)
                     {
                         channelData[eegIndex] = data[_eegRows[eegIndex], sampleIndex] * BoardCytonConstants.scale_factor_uVolts_per_count;
-                        if (SamplesCollected < 6)
-                            _options.DebugLog(false, $"Sample: {SamplesCollected}  Electrode: {eegIndex}  Raw: {data[_eegRows[eegIndex], sampleIndex]}  Scaled: {channelData[eegIndex]}  Railed: {railedElectrodes & (3 << eegIndex):X}");
                     }
 
                     if (railedElectrodes != 0)
