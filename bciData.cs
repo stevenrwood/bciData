@@ -6,6 +6,25 @@ using brainflow;
 
 namespace bciData
 {
+    public static class BoardCytonConstants
+    {
+        // Ohms. There is a series resistor on the 32 bit board
+        public static double series_resistor_ohms = 2200;                                                                                                                           
+        //reference voltage for ADC in ADS1299.  set by its hardware    
+        public static double ADS1299_Vref = 4.5;                                                                                                                          
+        //assumed gain setting for ADS1299.  set by its Arduino code
+        public static double ADS1299_gain = 24.0;                                                                                                                              
+        //ADS1299 datasheet Table 7, confirmed through experiment
+        public static double scale_factor_uVolts_per_count = ADS1299_Vref / (Math.Pow(2, 23) - 1) / ADS1299_gain * 1000000.0;                                                      
+        //6 nA, set by its Arduino code
+        public static double leadOffDrive_amps = 6.0e-9;                                                                                                                                                    
+        public static double accelScale = 0.002 / (Math.Pow(2, 4));
+        public const double _threshold_near_railed = 75.0;
+        public const double _threshold_railed = 90.0;
+    }
+
+
+
     public class OpenBCI
     {
         private readonly BciOptions _options;
@@ -19,8 +38,7 @@ namespace bciData
         private readonly string[] _eegNames;
         private readonly string[] _customEventNames;
         private readonly int[] _accelRows;
-        private const double ValidNegativeThreshold = -180000.0;
-        private const double ValidPositiveThreshold =  180000.0;
+
         private readonly StreamWriter _logFile;
 
         public OpenBCI(BciOptions options, string[] customEventNames)
@@ -76,7 +94,7 @@ namespace bciData
             BoardShim.log_message(Convert.ToInt32(LogLevels.LEVEL_INFO), $"board_id: {_boardId} ({Convert.ToInt32(_boardId)})");
             BoardShim.log_message(Convert.ToInt32(LogLevels.LEVEL_INFO), input_params.to_json());
             try
-            { 
+            {
                 _boardShim = new BoardShim(Convert.ToInt32(_boardId), input_params);
                 _boardShim.prepare_session();
                 if (!_boardShim.is_prepared())
@@ -85,8 +103,8 @@ namespace bciData
                 IsConnected = true;
                 _logFile = new StreamWriter(LogFilePath);
                 _logFile.WriteLine($"Timestamp,{string.Join(",", _eegNames)},AX,AY,AZ,{string.Join(",", _customEventNames)}");
-                _logFile.Flush(); 
-            }                                                                           
+                _logFile.Flush();
+            }
             catch (Exception e)
             {
                 IsConnected = false;
@@ -99,7 +117,7 @@ namespace bciData
         public bool AreCollecting { get; set; }
         public int SamplesCollected { get; set; }
         public string LogFilePath { get; }
-        public string RawLogFilePath { get; } 
+        public string RawLogFilePath { get; }
         public string DebugLogFilePath { get; }
         public string BrainflowLogFilePath { get; }
 
@@ -110,7 +128,7 @@ namespace bciData
             if (NativeMethods.GetModuleFileName(hModule, sb, (uint)sb.Capacity) != 0)
                 BoardShim.log_message(Convert.ToInt32(LogLevels.LEVEL_INFO), $"IsLoaded: {sb} {File.GetLastWriteTime(sb.ToString()):O}");
         }
-        
+
         public bool StartStream()
         {
             if (!IsConnected)
@@ -118,7 +136,7 @@ namespace bciData
                 _options.DebugLog(true, $"Attempt to start data stream failed as not connected.");
                 return false;
             }
-            
+
             AreCollecting = IsConnected;
             SamplesCollected = 0;
 
@@ -138,13 +156,26 @@ namespace bciData
             var _railedCountdown = -1;
             while (AreCollecting)
             {
+                if (_boardShim.get_board_data_count() == 0)
+                    continue;
+                
                 var data = _boardShim.get_board_data();
-                var railedElectrodes = 0;
+                _options.DebugLog(false, $"get_data returned {data.GetLength(1)} rows");
+
+                int railedElectrodes = 0;
+                try
+                {
+                    railedElectrodes = CheckRailed(data);
+                }
+                catch (Exception e)
+                {
+                    _options.DebugLog(true, $"CheckRailed exception - {e.Message}\n{e.StackTrace}");
+                }
                 for (var sampleIndex = 0; sampleIndex < data.GetLength(1); sampleIndex++)
                 {
                     SamplesCollected += 1;
                     if (SamplesCollected % 1000 == 0)
-                        _options.DebugLog(false, $"CollectionThread heartbeat: {data[_timeStampRow, sampleIndex]}: {SamplesCollected}");
+                        _options.DebugLog(false, $"Collection Thread heartbeat: {data[_timeStampRow, sampleIndex]}: {SamplesCollected}");
 
                     //
                     // Because the channels_data and aux_data is the raw data in counts read by the board,
@@ -158,13 +189,9 @@ namespace bciData
                     var channelData = new double[_eegRows.Length];
                     for (var eegIndex = 0; eegIndex < _eegRows.Length; eegIndex++)
                     {
-                        channelData[eegIndex] = data[_eegRows[eegIndex], sampleIndex] *
-                                                ((4500000) / 24 / (Math.Pow(2, 23) - 1));
-                        if (channelData[eegIndex] < ValidNegativeThreshold ||
-                            channelData[eegIndex] > ValidPositiveThreshold)
-                            railedElectrodes |= 1 << eegIndex;
+                        channelData[eegIndex] = data[_eegRows[eegIndex], sampleIndex] * BoardCytonConstants.scale_factor_uVolts_per_count;
                         if (SamplesCollected < 6)
-                            _options.DebugLog(false, $"Sample: {SamplesCollected}  Electrode: {eegIndex}  Raw: {data[_eegRows[eegIndex], sampleIndex]}  Scaled: {channelData[eegIndex]}  Railed: {railedElectrodes & 1 << eegIndex:X}");
+                            _options.DebugLog(false, $"Sample: {SamplesCollected}  Electrode: {eegIndex}  Raw: {data[_eegRows[eegIndex], sampleIndex]}  Scaled: {channelData[eegIndex]}  Railed: {railedElectrodes & (3 << eegIndex):X}");
                     }
 
                     if (railedElectrodes != 0)
@@ -173,18 +200,19 @@ namespace bciData
                             _railedCountdown = _checkForRailedCount;
 
                         _railedCountdown -= 1;
-                        continue;
                     }
-
-                    // No railed electrodes this sample, so reset railed count down counter.
-                    _railedCountdown = -1;
+                    else
+                    {
+                        // No railed electrodes this sample, so reset railed count down counter.
+                        _railedCountdown = -1;
+                    }
 
                     var auxData = new double[_accelRows.Length];
                     for (var auxIndex = 0; auxIndex < _accelRows.Length; auxIndex++)
-                        auxData[auxIndex] = data[_accelRows[auxIndex], sampleIndex] * (.002 / 16);
+                        auxData[auxIndex] = data[_accelRows[auxIndex], sampleIndex] * BoardCytonConstants.accelScale;
                     if (_options.EventQueue == null || !_options.EventQueue.TryDequeue(out var eventData))
                         eventData = null;
-                    var bciSample = new BciSample(SamplesCollected, channelData, auxData, 
+                    var bciSample = new BciSample(SamplesCollected, channelData, auxData,
                         data[_timeStampRow, sampleIndex], railedElectrodes, eventData);
                     if (!_options.ProcessBciSample(bciSample))
                         continue;
@@ -206,6 +234,53 @@ namespace bciData
                     _logFile.Flush();
                 }
             }
+        }
+
+        public enum RailedStatus
+        {
+            NotRailed,
+            NearRailed,
+            Railed
+        }
+
+        public int CheckRailed(double[,] data)
+        {
+            var numRows = data.GetLength(1);
+            if (numRows < 3 * 3)
+            {
+                return 0;
+            }
+
+            var railedStatus = 0;
+            var maxVal = BoardCytonConstants.scale_factor_uVolts_per_count * Math.Pow(2, 23);
+            var numSeconds = 3;
+            var nPoints = numSeconds * BoardShim.get_sampling_rate(Convert.ToInt32(_boardId));
+            var endPos = numRows;
+            _options.DebugLog(false, $"CheckRailed - maxVal: {maxVal}  nPoints: {nPoints}  endPos: {endPos}  #cols: {data.GetLength(0)}");
+            for (var channel = 0; channel < _eegNames.Length; channel++)
+            {
+                var startPos = Math.Max(0, endPos - nPoints);
+                var max = double.MinValue;
+                var row = channel < _eegRows.Length ? _eegRows[channel] : -1;
+                for (var i = startPos; row != -1 && i < endPos; i++)
+                {
+                    try
+                    {
+                        max = Math.Max(max, Math.Abs(data[row, i]));
+                    }
+                    catch (Exception e)
+                    {
+                        _options.DebugLog(true, $"CheckRailed: data[{_eegRows[channel]}, {i}] - {e.Message}");
+                    }
+                }
+                var percentage= (max / maxVal) * 100.0;
+                var channelStatus = percentage > BoardCytonConstants._threshold_railed ? RailedStatus.Railed :
+                    percentage > BoardCytonConstants._threshold_near_railed ? RailedStatus.NearRailed :
+                    RailedStatus.NotRailed;
+                railedStatus |= (int) channelStatus << channel * 2;
+            }
+            _options.DebugLog(false, $"CheckRailed returns: {railedStatus:X}");
+            return railedStatus;
         }
 
         public bool StopStream()

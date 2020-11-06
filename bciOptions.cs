@@ -46,7 +46,7 @@ namespace bciData
         public void DebugLog(bool error, string message)
         {
             BoardShim.log_message(Convert.ToInt32(LogLevels.LEVEL_INFO), message);
-            LogMessage(message);
+            LogMessage?.Invoke(message);
         }
     }
 }
